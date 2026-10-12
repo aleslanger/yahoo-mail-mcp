@@ -1,0 +1,4 @@
+[mcp_servers.yahoo_mail]
+command = "/absolute/path/to/yahoo-mcp"
+args = ["serve"]
+env = { YAHOO_MCP_CONFIG = "/absolute/path/to/config.json" }

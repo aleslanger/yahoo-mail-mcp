@@ -1,0 +1,17 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: gofmt -l cmd internal | tee /tmp/gofmt-output && test ! -s /tmp/gofmt-output
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go build -buildvcs=false ./...

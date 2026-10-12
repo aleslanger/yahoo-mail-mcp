@@ -1,0 +1,5 @@
+config.json
+*.exe
+yahoo-mcp
+*.log
+dist/

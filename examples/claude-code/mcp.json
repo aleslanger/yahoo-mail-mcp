@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "yahoo_mail": {
+      "type": "stdio",
+      "command": "/absolute/path/to/yahoo-mcp",
+      "args": ["serve"],
+      "env": {"YAHOO_MCP_CONFIG": "/absolute/path/to/config.json"}
+    }
+  }
+}
