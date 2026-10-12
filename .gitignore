@@ -1,5 +1,5 @@
 config.json
 *.exe
-yahoo-mcp
+/yahoo-mcp
 *.log
 dist/
