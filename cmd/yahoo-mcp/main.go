@@ -19,7 +19,7 @@ import (
 	"github.com/ales/yahoo-mail-mcp/internal/storage"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	if runtime.GOOS == "windows" {
