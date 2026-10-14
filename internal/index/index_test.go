@@ -160,3 +160,33 @@ func TestSyncStepPersistsProgressUntilComplete(t *testing.T) {
 		t.Fatalf("status: %+v, %v", status, err)
 	}
 }
+
+func TestSyncStepRefusesConcurrentSyncAndRecoversStaleLock(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := config.Account{Alias: "personal"}
+	calls := 0
+	fetch := func(context.Context, config.Account, string, uint32, uint32, int) (mail.FolderDelta, error) {
+		calls++
+		return mail.FolderDelta{UIDValidity: 1, NextUID: 1, Complete: true, Flags: map[uint32][]imap.Flag{}}, nil
+	}
+	lock := store.path("personal", "INBOX") + ".lock"
+	if err := os.WriteFile(lock, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SyncStep(context.Background(), a, "INBOX", 10, fetch); err == nil || !mail.IsTemporary(err) || calls != 0 {
+		t.Fatalf("concurrent sync: err=%v temporary=%t calls=%d", err, mail.IsTemporary(err), calls)
+	}
+	old := time.Now().Add(-staleSyncLock - time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SyncStep(context.Background(), a, "INBOX", 10, fetch); err != nil || calls != 1 {
+		t.Fatalf("stale lock not recovered: %v calls=%d", err, calls)
+	}
+	if _, err := os.Stat(lock); !os.IsNotExist(err) {
+		t.Fatalf("lock left behind: %v", err)
+	}
+}

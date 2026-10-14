@@ -22,7 +22,7 @@ func TestSyncFolderRetriesTransientReadFailures(t *testing.T) {
 	fetch := func(context.Context, config.Account, string, uint32, uint32, int) (mail.FolderDelta, error) {
 		calls++
 		if calls <= 2 {
-			return mail.FolderDelta{}, errors.New("IMAP authentication failed")
+			return mail.FolderDelta{}, mail.NewTemporaryError("IMAP authentication failed")
 		}
 		return mail.FolderDelta{UIDValidity: 1, NextUID: 2, Complete: true, New: []mail.Header{{UID: 1}}, Flags: map[uint32][]imap.Flag{1: {}}}, nil
 	}
@@ -44,10 +44,27 @@ func TestSyncFolderGivesUpAfterRetries(t *testing.T) {
 	calls := 0
 	fetch := func(context.Context, config.Account, string, uint32, uint32, int) (mail.FolderDelta, error) {
 		calls++
-		return mail.FolderDelta{}, errors.New("IMAP authentication failed")
+		return mail.FolderDelta{}, mail.NewTemporaryError("IMAP authentication failed")
 	}
 	err = syncFolder(store, config.Account{Alias: "personal"}, "INBOX", fetch, func(time.Duration) {})
 	if err == nil || calls != len(syncRetryDelays)+1 {
 		t.Fatalf("persistent failure: err=%v calls=%d", err, calls)
+	}
+}
+
+func TestSyncFolderDoesNotRetryPermanentErrors(t *testing.T) {
+	store, err := index.Open(filepath.Join(t.TempDir(), "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	fetch := func(context.Context, config.Account, string, uint32, uint32, int) (mail.FolderDelta, error) {
+		calls++
+		return mail.FolderDelta{}, errors.New("folder selection failed")
+	}
+	slept := false
+	err = syncFolder(store, config.Account{Alias: "personal"}, "Missing", fetch, func(time.Duration) { slept = true })
+	if err == nil || calls != 1 || slept {
+		t.Fatalf("permanent error retried: err=%v calls=%d slept=%t", err, calls, slept)
 	}
 }

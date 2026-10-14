@@ -3,7 +3,6 @@ package mail
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -103,7 +102,7 @@ func uidsFrom(c *imapclient.Client, from uint32) ([]imap.UID, error) {
 	set.AddRange(imap.UID(from), 0)
 	data, err := c.UIDSearch(&imap.SearchCriteria{UID: []imap.UIDSet{set}}, nil).Wait()
 	if err != nil {
-		return nil, errors.New("UID search failed")
+		return nil, NewTemporaryError("UID search failed")
 	}
 	uids := []imap.UID{}
 	for _, uid := range data.AllUIDs() {
@@ -121,7 +120,7 @@ func fetchHeaders(c *imapclient.Client, uids []imap.UID) ([]Header, error) {
 		set := imap.UIDSetNum(uids[start:min(start+deltaFetchChunk, len(uids))]...)
 		messages, err := c.Fetch(set, &imap.FetchOptions{UID: true, Envelope: true, Flags: true, RFC822Size: true, InternalDate: true}).Collect()
 		if err != nil {
-			return nil, errors.New("header fetch failed")
+			return nil, NewTemporaryError("header fetch failed")
 		}
 		for _, m := range messages {
 			headers = append(headers, toHeader(m))
@@ -157,7 +156,7 @@ func allFlags(c *imapclient.Client) (map[uint32][]imap.Flag, error) {
 	set.AddRange(1, 0)
 	messages, err := c.Fetch(set, &imap.FetchOptions{UID: true, Flags: true}).Collect()
 	if err != nil {
-		return nil, errors.New("flag fetch failed")
+		return nil, NewTemporaryError("flag fetch failed")
 	}
 	flags := make(map[uint32][]imap.Flag, len(messages))
 	for _, m := range messages {
@@ -194,7 +193,7 @@ func SearchOldest(ctx context.Context, a config.Account, folder string, filter S
 	}
 	data, err := c.UIDSearch(criteria, nil).Wait()
 	if err != nil {
-		return 0, nil, errors.New("UID search failed")
+		return 0, nil, NewTemporaryError("UID search failed")
 	}
 	found := data.AllUIDs()
 	slices.Sort(found)

@@ -108,12 +108,12 @@ func connect(ctx context.Context, a config.Account) (*imapclient.Client, func(),
 	select {
 	case imapConnectionSlots <- struct{}{}:
 	case <-queueCtx.Done():
-		return nil, nil, errors.New("IMAP connection capacity unavailable")
+		return nil, nil, NewTemporaryError("IMAP connection capacity unavailable")
 	}
 	if _, injected := ctx.Value(dialTLSKey{}).(dialTLSFunc); !injected {
 		if err := imapLoginPacer.Wait(queueCtx); err != nil {
 			<-imapConnectionSlots
-			return nil, nil, errors.New("IMAP login rate capacity unavailable")
+			return nil, nil, NewTemporaryError("IMAP login rate capacity unavailable")
 		}
 	}
 	if err := queueCtx.Err(); err != nil {
@@ -123,7 +123,7 @@ func connect(ctx context.Context, a config.Account) (*imapclient.Client, func(),
 	c, err := dial(addr, &imapclient.Options{Dialer: &net.Dialer{Timeout: 10 * time.Second}, TLSConfig: tlsConfig})
 	if err != nil {
 		<-imapConnectionSlots
-		return nil, nil, errors.New("IMAP TLS connection failed")
+		return nil, nil, NewTemporaryError("IMAP TLS connection failed")
 	}
 	deadlineCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	done := make(chan struct{})
@@ -147,7 +147,7 @@ func connect(ctx context.Context, a config.Account) (*imapclient.Client, func(),
 	}
 	if err := c.Login(a.Address, p).Wait(); err != nil {
 		closeFn()
-		return nil, nil, errors.New("IMAP authentication failed")
+		return nil, nil, NewTemporaryError("IMAP authentication failed")
 	}
 	return c, closeFn, nil
 }

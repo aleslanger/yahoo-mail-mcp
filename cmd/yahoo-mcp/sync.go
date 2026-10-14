@@ -98,6 +98,9 @@ func syncStepWithRetry(store index.Store, a config.Account, folder string, fetch
 		if err == nil {
 			return status, nil
 		}
+		if !mail.IsTemporary(err) {
+			return index.FolderStatus{}, err
+		}
 		lastErr = err
 	}
 	return index.FolderStatus{}, lastErr
