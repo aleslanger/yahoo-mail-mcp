@@ -40,6 +40,7 @@ type Config struct {
 	Accounts    []Account `json:"accounts"`
 	JournalDir  string    `json:"journal_dir,omitempty"`
 	DownloadDir string    `json:"download_dir,omitempty"`
+	HTTPListen  string    `json:"http_listen,omitempty"`
 }
 
 func Load(path string) (Config, error) {
@@ -74,6 +75,12 @@ func validate(c Config) (Config, error) {
 	}
 	if c.DownloadDir != "" && !filepath.IsAbs(c.DownloadDir) {
 		return c, errors.New("download_dir must be an absolute path")
+	}
+	if c.HTTPListen == "" {
+		c.HTTPListen = defaultHTTPListen
+	}
+	if err := validateLoopbackListen(c.HTTPListen); err != nil {
+		return c, err
 	}
 	seen := map[string]bool{}
 	for i := range c.Accounts {
@@ -195,38 +202,51 @@ func Password(alias string) (string, error) {
 	if p != "" {
 		return p, nil
 	}
+	return readSecretFile(alias+"-password", errors.New("app password is not configured for this account"))
+}
+
+// credentialDir returns the private directory that holds local secrets.
+func credentialDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", errors.New("app password is not configured for this account")
+		return "", errors.New("cannot locate home directory")
 	}
-	dir := filepath.Join(home, ".config", "yahoo-mail-mcp")
+	return filepath.Join(home, ".config", "yahoo-mail-mcp"), nil
+}
+
+// readSecretFile reads a one-line secret from a 0600 file in the 0700 credential directory.
+func readSecretFile(name string, missing error) (string, error) {
+	dir, err := credentialDir()
+	if err != nil {
+		return "", missing
+	}
 	dirInfo, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", errors.New("app password is not configured for this account")
+		return "", missing
 	}
 	if err != nil || !dirInfo.IsDir() || dirInfo.Mode().Perm() != 0700 {
 		return "", errors.New("credential directory must be private (0700)")
 	}
-	path := filepath.Join(dir, alias+"-password")
+	path := filepath.Join(dir, name)
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", errors.New("app password is not configured for this account")
+		return "", missing
 	}
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() < 1 || info.Size() > 1024 {
 		return "", errors.New("credential file must be a private regular file (0600) under 1 KiB")
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return "", errors.New("cannot read app password file")
+		return "", errors.New("cannot read credential file")
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, 1025))
 	if err != nil || len(data) > 1024 {
-		return "", errors.New("cannot read app password file")
+		return "", errors.New("cannot read credential file")
 	}
-	p = strings.TrimSuffix(string(data), "\n")
-	if p == "" || strings.ContainsAny(p, "\x00\r\n") {
-		return "", errors.New("invalid app password file")
+	secret := strings.TrimSuffix(string(data), "\n")
+	if secret == "" || strings.ContainsAny(secret, "\x00\r\n") {
+		return "", errors.New("invalid credential file")
 	}
-	return p, nil
+	return secret, nil
 }

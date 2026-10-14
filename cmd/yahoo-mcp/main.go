@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/ales/yahoo-mail-mcp/internal/config"
@@ -19,11 +21,21 @@ const version = "0.1.0"
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: yahoo-mcp serve|config-validate|storage-status|accounts-list|account-add <alias> <address>|account-remove <alias>|account-test <alias>|smtp-test <alias>|version")
+		fmt.Fprintln(os.Stderr, "usage: yahoo-mcp serve|serve-http|http-token|config-validate|storage-status|accounts-list|account-add <alias> <address>|account-remove <alias>|account-test <alias>|smtp-test <alias>|version")
 		os.Exit(2)
 	}
 	if os.Args[1] == "version" {
 		fmt.Println(version)
+		return
+	}
+	if os.Args[1] == "http-token" {
+		token, err := config.CreateHTTPToken()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "HTTP token:", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "Created ~/.config/yahoo-mail-mcp/http-token; configure your MCP client with this bearer token:")
+		fmt.Println(token)
 		return
 	}
 	path := os.Getenv("YAHOO_MCP_CONFIG")
@@ -148,6 +160,20 @@ func main() {
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		if err := server.Run(context.Background(), cfg, logger); err != nil {
 			logger.Error("server stopped", "error", err)
+			os.Exit(1)
+		}
+	case "serve-http":
+		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+		token, err := config.HTTPToken()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "HTTP token:", err)
+			os.Exit(1)
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		err = server.RunHTTP(ctx, cfg, logger, token)
+		stop()
+		if err != nil {
+			logger.Error("HTTP server stopped", "error", err)
 			os.Exit(1)
 		}
 	default:
