@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -21,6 +22,10 @@ import (
 const version = "0.1.0"
 
 func main() {
+	if runtime.GOOS == "windows" {
+		fmt.Fprintln(os.Stderr, "Windows is not supported: private credential, journal and index files rely on POSIX file permissions")
+		os.Exit(2)
+	}
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: yahoo-mcp serve|serve-http|http-token|sync <alias> [folder...]|rules-run [--apply]|config-validate|storage-status|accounts-list|account-add <alias> <address>|account-remove <alias>|account-test <alias>|smtp-test <alias>|version")
 		os.Exit(2)

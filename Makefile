@@ -103,12 +103,12 @@ update:
 	$(MAKE) check
 
 dist:
+	rm -rf dist
 	mkdir -p dist
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(BUILD_FLAGS) -trimpath -o dist/yahoo-mcp-linux-amd64 ./cmd/yahoo-mcp
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build $(BUILD_FLAGS) -trimpath -o dist/yahoo-mcp-linux-arm64 ./cmd/yahoo-mcp
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO) build $(BUILD_FLAGS) -trimpath -o dist/yahoo-mcp-darwin-amd64 ./cmd/yahoo-mcp
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build $(BUILD_FLAGS) -trimpath -o dist/yahoo-mcp-darwin-arm64 ./cmd/yahoo-mcp
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build $(BUILD_FLAGS) -trimpath -o dist/yahoo-mcp-windows-amd64.exe ./cmd/yahoo-mcp
 	cd dist && sha256sum yahoo-mcp-* > SHA256SUMS
 clean:
 	rm -rf dist yahoo-mcp
