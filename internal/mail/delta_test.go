@@ -61,3 +61,29 @@ func TestFetchFolderDeltaHandlesEmptyFolderAndBounds(t *testing.T) {
 		t.Fatal("oversized page accepted")
 	}
 }
+
+func TestSearchOldestCoversWholeFolderAndFetchHeaders(t *testing.T) {
+	ctx, a := localIMAP(t, false)
+	u1, u2, u3 := appendFixture(t, ctx, a), appendFixture(t, ctx, a), appendFixture(t, ctx, a)
+	validity, uids, err := SearchOldest(ctx, a, "INBOX", SearchFilter{From: "sender@example.com"}, 2)
+	if err != nil || validity == 0 || len(uids) != 2 || uids[0] != u1 || uids[1] != u2 {
+		t.Fatalf("oldest matches: validity=%d uids=%v err=%v", validity, uids, err)
+	}
+	if err := ChangeFlag(ctx, a, "INBOX", u1, validity, imap.FlagSeen, true); err != nil {
+		t.Fatal(err)
+	}
+	_, unread, err := SearchOldest(ctx, a, "INBOX", SearchFilter{From: "sender@example.com", Unread: true}, 20)
+	if err != nil || len(unread) != 2 || unread[0] != u2 || unread[1] != u3 {
+		t.Fatalf("unread matches: %v, %v", unread, err)
+	}
+	headers, err := FetchHeaders(ctx, a, "INBOX", validity, []uint32{u3, u2})
+	if err != nil || len(headers) != 2 || headers[0].UID != u2 || headers[1].Subject != "Fixture subject" {
+		t.Fatalf("headers: %+v, %v", headers, err)
+	}
+	if _, err := FetchHeaders(ctx, a, "INBOX", validity+1, []uint32{u2}); err == nil {
+		t.Fatal("stale UIDVALIDITY accepted")
+	}
+	if _, _, err := SearchOldest(ctx, a, "INBOX", SearchFilter{}, maxDeltaHeaders+1); err == nil {
+		t.Fatal("oversized limit accepted")
+	}
+}

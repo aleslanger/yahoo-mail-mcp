@@ -12,6 +12,7 @@ import (
 
 	"github.com/ales/yahoo-mail-mcp/internal/config"
 	"github.com/ales/yahoo-mail-mcp/internal/mail"
+	"github.com/ales/yahoo-mail-mcp/internal/rules"
 	"github.com/ales/yahoo-mail-mcp/internal/send"
 	"github.com/ales/yahoo-mail-mcp/internal/server"
 	"github.com/ales/yahoo-mail-mcp/internal/storage"
@@ -21,7 +22,7 @@ const version = "0.1.0"
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: yahoo-mcp serve|serve-http|http-token|sync <alias> [folder...]|config-validate|storage-status|accounts-list|account-add <alias> <address>|account-remove <alias>|account-test <alias>|smtp-test <alias>|version")
+		fmt.Fprintln(os.Stderr, "usage: yahoo-mcp serve|serve-http|http-token|sync <alias> [folder...]|rules-run [--apply]|config-validate|storage-status|accounts-list|account-add <alias> <address>|account-remove <alias>|account-test <alias>|smtp-test <alias>|version")
 		os.Exit(2)
 	}
 	if os.Args[1] == "version" {
@@ -160,6 +161,11 @@ func main() {
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		if err := server.Run(context.Background(), cfg, logger); err != nil {
 			logger.Error("server stopped", "error", err)
+			os.Exit(1)
+		}
+	case "rules-run":
+		if err := runRules(cfg, os.Args[2:], os.Stdout, rules.RealOperations()); err != nil {
+			fmt.Fprintln(os.Stderr, "rules-run:", err)
 			os.Exit(1)
 		}
 	case "sync":

@@ -169,3 +169,65 @@ func allFlags(c *imapclient.Client) (map[uint32][]imap.Flag, error) {
 	}
 	return flags, nil
 }
+
+// SearchOldest runs one server-side search over the whole folder and returns
+// the oldest matching UIDs, at most limit of them.
+func SearchOldest(ctx context.Context, a config.Account, folder string, filter SearchFilter, limit int) (uint32, []uint32, error) {
+	if limit < 1 || limit > maxDeltaHeaders {
+		return 0, nil, fmt.Errorf("limit must be 1..%d", maxDeltaHeaders)
+	}
+	criteria, err := searchCriteria(filter)
+	if err != nil {
+		return 0, nil, err
+	}
+	c, closeFn, err := connect(ctx, a)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer closeFn()
+	sel, err := selectFolder(c, folder, true)
+	if err != nil {
+		return 0, nil, err
+	}
+	if sel.NumMessages == 0 {
+		return sel.UIDValidity, []uint32{}, nil
+	}
+	data, err := c.UIDSearch(criteria, nil).Wait()
+	if err != nil {
+		return 0, nil, errors.New("UID search failed")
+	}
+	found := data.AllUIDs()
+	slices.Sort(found)
+	uids := make([]uint32, 0, min(limit, len(found)))
+	for _, uid := range found[:min(limit, len(found))] {
+		uids = append(uids, uint32(uid))
+	}
+	return sel.UIDValidity, uids, nil
+}
+
+// FetchHeaders reads headers of the given UIDs without marking them read.
+func FetchHeaders(ctx context.Context, a config.Account, folder string, validity uint32, uids []uint32) ([]Header, error) {
+	if len(uids) == 0 || len(uids) > maxDeltaHeaders {
+		return nil, fmt.Errorf("uids must contain 1..%d entries", maxDeltaHeaders)
+	}
+	c, closeFn, err := connect(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	defer closeFn()
+	sel, err := selectFolder(c, folder, true)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkValidity(sel.UIDValidity, validity); err != nil {
+		return nil, err
+	}
+	list := make([]imap.UID, 0, len(uids))
+	for _, uid := range uids {
+		if err := validateUID(uid); err != nil {
+			return nil, err
+		}
+		list = append(list, imap.UID(uid))
+	}
+	return fetchHeaders(c, list)
+}

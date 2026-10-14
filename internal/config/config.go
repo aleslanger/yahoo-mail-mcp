@@ -35,6 +35,8 @@ type Account struct {
 	TrashFolder   string `json:"trash_folder,omitempty"`
 	AllowSend     bool   `json:"allow_send"`
 	AllowDelete   bool   `json:"allow_delete,omitempty"`
+	// AllowAutomation lets rules-run --apply organize mail without a client.
+	AllowAutomation bool `json:"allow_automation,omitempty"`
 }
 type Config struct {
 	Accounts    []Account `json:"accounts"`
@@ -42,6 +44,7 @@ type Config struct {
 	DownloadDir string    `json:"download_dir,omitempty"`
 	HTTPListen  string    `json:"http_listen,omitempty"`
 	IndexDir    string    `json:"index_dir,omitempty"`
+	Rules       []Rule    `json:"rules,omitempty"`
 }
 
 func Load(path string) (Config, error) {
@@ -133,6 +136,12 @@ func validate(c Config) (Config, error) {
 		if a.AllowDelete && c.JournalDir == "" {
 			return c, fmt.Errorf("account %s allows delete but journal_dir is missing", a.Alias)
 		}
+		if a.AllowAutomation && (!a.AllowOrganize || c.JournalDir == "") {
+			return c, fmt.Errorf("account %s allows automation but needs allow_organize and journal_dir", a.Alias)
+		}
+	}
+	if err := validateRules(c); err != nil {
+		return c, err
 	}
 	return c, nil
 }
