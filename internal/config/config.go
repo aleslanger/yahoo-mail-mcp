@@ -41,6 +41,7 @@ type Config struct {
 	JournalDir  string    `json:"journal_dir,omitempty"`
 	DownloadDir string    `json:"download_dir,omitempty"`
 	HTTPListen  string    `json:"http_listen,omitempty"`
+	IndexDir    string    `json:"index_dir,omitempty"`
 }
 
 func Load(path string) (Config, error) {
@@ -75,6 +76,9 @@ func validate(c Config) (Config, error) {
 	}
 	if c.DownloadDir != "" && !filepath.IsAbs(c.DownloadDir) {
 		return c, errors.New("download_dir must be an absolute path")
+	}
+	if c.IndexDir != "" && !filepath.IsAbs(c.IndexDir) {
+		return c, errors.New("index_dir must be an absolute path")
 	}
 	if c.HTTPListen == "" {
 		c.HTTPListen = defaultHTTPListen

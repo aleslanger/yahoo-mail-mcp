@@ -21,7 +21,7 @@ const version = "0.1.0"
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: yahoo-mcp serve|serve-http|http-token|config-validate|storage-status|accounts-list|account-add <alias> <address>|account-remove <alias>|account-test <alias>|smtp-test <alias>|version")
+		fmt.Fprintln(os.Stderr, "usage: yahoo-mcp serve|serve-http|http-token|sync <alias> [folder...]|config-validate|storage-status|accounts-list|account-add <alias> <address>|account-remove <alias>|account-test <alias>|smtp-test <alias>|version")
 		os.Exit(2)
 	}
 	if os.Args[1] == "version" {
@@ -160,6 +160,11 @@ func main() {
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		if err := server.Run(context.Background(), cfg, logger); err != nil {
 			logger.Error("server stopped", "error", err)
+			os.Exit(1)
+		}
+	case "sync":
+		if err := runSync(cfg, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "sync:", err)
 			os.Exit(1)
 		}
 	case "serve-http":

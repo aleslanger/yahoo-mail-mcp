@@ -827,6 +827,7 @@ func NewWithLogger(cfg config.Config, log *slog.Logger) *mcp.Server {
 		out, err := send.Send(ctx, a, cfg.JournalDir, message)
 		return nil, out, err
 	})
+	registerIndexTools(s, cfg, account)
 	return s
 }
 
