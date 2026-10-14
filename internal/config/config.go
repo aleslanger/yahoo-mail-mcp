@@ -34,6 +34,7 @@ type Account struct {
 	SMTPSecurity  string `json:"smtp_security,omitempty"`
 	TrashFolder   string `json:"trash_folder,omitempty"`
 	AllowSend     bool   `json:"allow_send"`
+	AllowDelete   bool   `json:"allow_delete,omitempty"`
 }
 type Config struct {
 	Accounts    []Account `json:"accounts"`
@@ -117,6 +118,9 @@ func validate(c Config) (Config, error) {
 		}
 		if a.AllowSend && c.JournalDir == "" {
 			return c, fmt.Errorf("account %s allows send but journal_dir is missing", a.Alias)
+		}
+		if a.AllowDelete && c.JournalDir == "" {
+			return c, fmt.Errorf("account %s allows delete but journal_dir is missing", a.Alias)
 		}
 	}
 	return c, nil

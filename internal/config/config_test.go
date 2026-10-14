@@ -180,3 +180,21 @@ func TestSMTPSecurityDefaultsFromPortAndRejectsUnknownMode(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteRequiresAbsoluteJournal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"accounts":[{"alias":"main","address":"account@example.com","allow_delete":true}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("allow_delete accepted without journal_dir")
+	}
+	journal := filepath.Join(t.TempDir(), "journal")
+	if err := os.WriteFile(path, []byte(`{"journal_dir":"`+journal+`","accounts":[{"alias":"main","address":"account@example.com","allow_delete":true}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil || !c.Accounts[0].AllowDelete {
+		t.Fatalf("allow_delete with journal_dir: %+v, %v", c, err)
+	}
+}

@@ -158,35 +158,7 @@ func LoadDraftRaw(ctx context.Context, a config.Account, uid, validity uint32) (
 }
 
 func deleteDraft(c *imapclient.Client, folder string, uid, validity uint32) error {
-	if !c.Caps().Has(imap.CapUIDPlus) && !c.Caps().Has(imap.CapIMAP4rev2) {
-		return errors.New("draft deletion requires UID EXPUNGE")
-	}
-	sel, err := selectFolder(c, folder, false)
-	if err != nil {
-		return err
-	}
-	if err := checkValidity(sel.UIDValidity, validity); err != nil {
-		return err
-	}
-	if err := validateUID(uid); err != nil {
-		return err
-	}
-	set := imap.UIDSetNum(imap.UID(uid))
-	found, err := c.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
-	if err != nil || len(found) != 1 || found[0].UID != imap.UID(uid) {
-		return errors.New("draft not found")
-	}
-	if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Flags: []imap.Flag{imap.FlagDeleted}, Silent: true}, nil).Close(); err != nil {
-		return errors.New("draft deletion outcome uncertain; inspect Drafts")
-	}
-	if err := c.UIDExpunge(set).Close(); err != nil {
-		return errors.New("draft deletion outcome uncertain; inspect Drafts")
-	}
-	after, err := c.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
-	if err != nil || len(after) != 0 {
-		return errors.New("draft deletion postcondition uncertain; inspect Drafts")
-	}
-	return nil
+	return expungeUID(c, folder, uid, validity, "draft", "Drafts")
 }
 
 func DeleteDraft(ctx context.Context, a config.Account, uid, validity uint32) error {

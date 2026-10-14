@@ -88,7 +88,7 @@ type BatchPrepareInput struct {
 	Folder       string   `json:"folder"`
 	UIDValidity  uint32   `json:"uid_validity"`
 	UIDs         []uint32 `json:"uids"`
-	Action       string   `json:"action"`
+	Action       string   `json:"action" jsonschema:"one of move, copy, mark_read, mark_unread, flag, unflag, delete"`
 	TargetFolder string   `json:"target_folder,omitempty"`
 }
 type BatchExecuteInput struct {
@@ -303,6 +303,7 @@ type AccountView struct {
 	Address       string `json:"address"`
 	AllowOrganize bool   `json:"allow_organize"`
 	AllowSend     bool   `json:"allow_send"`
+	AllowDelete   bool   `json:"allow_delete"`
 }
 type Accounts struct {
 	Accounts []AccountView `json:"accounts"`
@@ -365,7 +366,7 @@ func NewWithLogger(cfg config.Config, log *slog.Logger) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "account_list", Description: "List configured account aliases and permissions without credentials."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, Accounts, error) {
 		out := Accounts{Accounts: []AccountView{}}
 		for _, a := range cfg.Accounts {
-			out.Accounts = append(out.Accounts, AccountView{Alias: a.Alias, Address: a.Address, AllowOrganize: a.AllowOrganize, AllowSend: a.AllowSend})
+			out.Accounts = append(out.Accounts, AccountView{Alias: a.Alias, Address: a.Address, AllowOrganize: a.AllowOrganize, AllowSend: a.AllowSend, AllowDelete: a.AllowDelete})
 		}
 		return nil, out, nil
 	})
@@ -694,7 +695,7 @@ func NewWithLogger(cfg config.Config, log *slog.Logger) *mcp.Server {
 		}
 		return nil, transferOutcome(result), nil
 	})
-	mcp.AddTool(s, &mcp.Tool{Name: "email_batch_prepare", Description: "Preview 1..20 exact UIDs for move, copy or flag changes; save a short-lived private plan. Requires allow_organize and journal_dir."}, func(ctx context.Context, _ *mcp.CallToolRequest, in BatchPrepareInput) (*mcp.CallToolResult, batch.Preview, error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "email_batch_prepare", Description: "Preview 1..20 exact UIDs for move, copy, flag changes or permanent delete; save a short-lived private plan. Requires journal_dir and allow_organize; action delete instead requires allow_delete, works only in the Trash folder and cannot be undone."}, func(ctx context.Context, _ *mcp.CallToolRequest, in BatchPrepareInput) (*mcp.CallToolResult, batch.Preview, error) {
 		a, err := account(in.Account)
 		if err != nil {
 			return nil, batch.Preview{}, err

@@ -2,12 +2,13 @@
 
 A local [Model Context Protocol](https://modelcontextprotocol.io) server, written in Go, that gives MCP clients such as Claude Code and Codex bounded access to a Yahoo Mail account over IMAP and SMTP. It can read and search mail, organize messages, manage drafts, and send, reply and forward with explicit safeguards.
 
-> **Status: not production ready.** The target is a supervised, single-user server on your own machine over stdio. Write permissions are disabled by default; enable them only while you supervise the client. Permanent deletion, automation rules, sync, remote HTTP transport and SMTP on port 587 (STARTTLS) are not implemented.
+> **Status: not production ready.** The target is a supervised, single-user server on your own machine over stdio. Write permissions are disabled by default; enable them only while you supervise the client. Automation rules, sync and remote HTTP transport are not implemented.
 
 ## Features
 
 - **Read:** folder list and tree with message and unread counts, paged listing, server-side search, next unread, raw MIME in 256 KiB ranges, parsed plain and HTML bodies, attachment metadata, retrieval and saving to a private directory.
-- **Organize:** create folders, mark read or unread, flag or unflag, copy, move, and move to Trash. Never expunges.
+- **Organize:** create folders, mark read or unread, flag or unflag, copy, move, and move to Trash.
+- **Permanent delete:** removes previewed messages from the Trash folder only. Needs its own `allow_delete` permission and a confirmed batch.
 - **Drafts:** create, list, read, update, delete and send the exact stored draft.
 - **Send:** plain or HTML messages with small attachments, reply, reply-all and forward. Every send needs a preview digest and an idempotency key.
 - **Batch:** preview, then confirm move, copy or flag changes for 1–20 exact UIDs.
@@ -105,10 +106,12 @@ A first session: `account_list` → `account_test_connection` (`account: "person
 |---|---|---|
 | `alias`, `address` | account | Account name used by tools and its Yahoo address |
 | `imap_host`, `imap_port`, `smtp_host`, `smtp_port` | account | Default to Yahoo (993 and 465, TLS) |
+| `smtp_security` | account | `tls` (implicit TLS, the default) or `starttls` (the default when `smtp_port` is 587). STARTTLS is mandatory; credentials are never sent before TLS. |
 | `allow_organize` | account | Enables folder creation, flags, copy, move, Trash, drafts and batches |
 | `allow_send` | account | Enables SMTP sending |
+| `allow_delete` | account | Enables permanent deletion from Trash through a confirmed batch. Requires `journal_dir`. |
 | `trash_folder` | account | Explicit Trash folder when the server's special-use attribute is ambiguous |
-| `journal_dir` | top level | Absolute path to a private directory for the send and batch journal. Required for sending and batches. |
+| `journal_dir` | top level | Absolute path to a private directory for the send and batch journal. Required for sending, batches and deletion. |
 | `download_dir` | top level | Absolute path to a private 0700 directory for `attachment_save` |
 
 ## Tools
@@ -128,12 +131,13 @@ A first session: `account_list` → `account_test_connection` (`account: "person
 Every message reference consists of `folder`, `uid` and `uid_validity`. Every tool that sends or batches works in two steps:
 
 - **Sending:** call the `*_prepare` tool and inspect the preview. Then call the matching send tool with the same content, a unique `idempotency_key` and the returned digest as `expected_digest`.
-- **Batches:** `email_batch_prepare` returns a short-lived token. Execute it with `email_batch_execute` and `confirm: true`.
+- **Batches:** `email_batch_prepare` returns a short-lived token. Execute it with `email_batch_execute` and `confirm: true`. Actions: `move`, `copy`, `mark_read`, `mark_unread`, `flag`, `unflag` and `delete`.
 
 ## Safety and limits
 
-- Writes are refused unless the account enables `allow_organize` or `allow_send`. All message operations check UIDVALIDITY.
-- `email_move` and `email_trash` use IMAP `MOVE` only when the server advertises it. There is no COPY/EXPUNGE fallback, and nothing is permanently deleted.
+- Writes are refused unless the account enables `allow_organize`, `allow_send` or `allow_delete`. All message operations check UIDVALIDITY.
+- `email_move` and `email_trash` use IMAP `MOVE` only when the server advertises it. There is no COPY/EXPUNGE fallback.
+- Permanent deletion works only in the uniquely resolved Trash folder and cannot be undone. It removes exactly the planned UIDs with `UID EXPUNGE`, so other messages already marked `\Deleted` stay. The server must support UIDPLUS or IMAP4rev2.
 - Once SMTP submission begins, repeating an idempotency key returns the recorded outcome instead of sending again. A lost acknowledgment is recorded as `uncertain` and is never retried automatically. Check your Sent folder before you use a new key.
 - Batch plans run once. Repeating an execute call returns the stored per-message outcomes.
 - **Read limits:** search and listing cover a window of 5,000 UIDs per call. Raw reads return 256 KiB per call. Parsing handles messages up to 16 MiB with 64 KiB per text part. `attachment_get` returns at most 64 KiB, and `attachment_save` saves at most 10 MiB.

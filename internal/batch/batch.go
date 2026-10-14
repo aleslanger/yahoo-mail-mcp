@@ -64,6 +64,9 @@ type mailOperations struct {
 	getRange     func(context.Context, config.Account, string, uint32, uint32, int64, int) (mail.Body, error)
 	copyOrMove   func(context.Context, config.Account, string, string, uint32, uint32, bool) (any, error)
 	changeFlag   func(context.Context, config.Account, string, uint32, uint32, imap.Flag, bool) error
+	trashFolder  func(context.Context, config.Account) (string, error)
+	// permanentlyDelete expunges one UID; it must refuse folders other than Trash.
+	permanentlyDelete func(context.Context, config.Account, string, uint32, uint32) error
 }
 
 func realMailOperations() mailOperations {
@@ -72,7 +75,7 @@ func realMailOperations() mailOperations {
 		copyOrMove: func(ctx context.Context, a config.Account, folder, target string, uid, validity uint32, move bool) (any, error) {
 			return mail.CopyOrMove(ctx, a, folder, target, uid, validity, move)
 		},
-		changeFlag: mail.ChangeFlag,
+		changeFlag: mail.ChangeFlag, trashFolder: mail.TrashFolder, permanentlyDelete: mail.PermanentlyDelete,
 	}
 }
 
@@ -90,6 +93,20 @@ func privateDir(dir string) error {
 	return nil
 }
 
+// requirePermission maps a batch action to the account permission it needs.
+func requirePermission(a config.Account, action string) error {
+	if action == "delete" {
+		if !a.AllowDelete {
+			return errors.New("delete permission is disabled for account")
+		}
+		return nil
+	}
+	if !a.AllowOrganize {
+		return errors.New("organize permission is disabled for account")
+	}
+	return nil
+}
+
 func validate(in Input) error {
 	if in.Account == "" || in.Folder == "" || in.UIDValidity == 0 || len(in.UIDs) == 0 || len(in.UIDs) > maxItems {
 		return errors.New("batch requires account, folder, UIDVALIDITY and 1..20 UIDs")
@@ -102,6 +119,10 @@ func validate(in Input) error {
 	case "mark_read", "mark_unread", "flag", "unflag":
 		if in.Target != "" {
 			return errors.New("flag batch must not include target_folder")
+		}
+	case "delete":
+		if in.Target != "" {
+			return errors.New("delete batch must not include target_folder")
 		}
 	default:
 		return errors.New("unsupported batch action")
@@ -175,14 +196,23 @@ func Prepare(ctx context.Context, a config.Account, dir string, in Input) (Previ
 }
 
 func prepare(ctx context.Context, a config.Account, dir string, in Input, ops mailOperations) (Preview, error) {
-	if !a.AllowOrganize {
-		return Preview{}, errors.New("organize permission is disabled for account")
+	if err := requirePermission(a, in.Action); err != nil {
+		return Preview{}, err
 	}
 	if in.Account != a.Alias {
 		return Preview{}, errors.New("batch account mismatch")
 	}
 	if err := validate(in); err != nil {
 		return Preview{}, err
+	}
+	if in.Action == "delete" {
+		trash, err := ops.trashFolder(ctx, a)
+		if err != nil {
+			return Preview{}, err
+		}
+		if in.Folder != trash {
+			return Preview{}, errors.New("permanent deletion is allowed only in the Trash folder")
+		}
 	}
 	if err := privateDir(dir); err != nil {
 		return Preview{}, err
@@ -236,8 +266,8 @@ func Execute(ctx context.Context, a config.Account, dir, token string, confirmed
 }
 
 func execute(ctx context.Context, a config.Account, dir, token string, confirmed bool, ops mailOperations) (Outcome, error) {
-	if !a.AllowOrganize {
-		return Outcome{}, errors.New("organize permission is disabled for account")
+	if !a.AllowOrganize && !a.AllowDelete {
+		return Outcome{}, errors.New("organize and delete permissions are disabled for account")
 	}
 	if !confirmed {
 		return Outcome{}, errors.New("batch execution requires confirm=true after inspecting the preview")
@@ -268,6 +298,9 @@ func execute(ctx context.Context, a config.Account, dir, token string, confirmed
 			return Outcome{}, errors.New("batch journal items do not match previewed UIDs")
 		}
 	}
+	if err := requirePermission(a, state.Input.Action); err != nil {
+		return Outcome{}, err
+	}
 	if state.Executed {
 		return summarize(state.Items), nil
 	}
@@ -296,6 +329,8 @@ func execute(ctx context.Context, a config.Account, dir, token string, confirmed
 			operationErr = ops.changeFlag(ctx, a, state.Input.Folder, uid, state.Input.UIDValidity, imap.FlagSeen, state.Input.Action == "mark_read")
 		case "flag", "unflag":
 			operationErr = ops.changeFlag(ctx, a, state.Input.Folder, uid, state.Input.UIDValidity, imap.FlagFlagged, state.Input.Action == "flag")
+		case "delete":
+			operationErr = ops.permanentlyDelete(ctx, a, state.Input.Folder, uid, state.Input.UIDValidity)
 		}
 		if operationErr == nil {
 			state.Items[i].Status = "completed"
