@@ -1,0 +1,12 @@
+{
+  "accounts": [
+    {
+      "alias": "personal",
+      "address": "your-address@example.com",
+      "imap_host": "imap.mail.yahoo.com",
+      "imap_port": 993,
+      "allow_organize": false,
+      "allow_send": false
+    }
+  ]
+}

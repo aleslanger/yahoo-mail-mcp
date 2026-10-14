@@ -2,23 +2,43 @@ package mail
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/ales/yahoo-mail-mcp/internal/config"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"io"
 	"net"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 var ErrStale = errors.New("UIDVALIDITY changed; refresh message references")
 var ErrUnsupported = errors.New("server does not advertise a safe MOVE capability")
 
 const maxPage = 50
+const maxConcurrentIMAPConnections = 4
+const minIMAPLoginInterval = time.Second
+
+var imapConnectionSlots = make(chan struct{}, maxConcurrentIMAPConnections)
+var imapLoginPacer = rate.NewLimiter(rate.Every(minIMAPLoginInterval), 1)
+
+type dialTLSKey struct{}
+type dialTLSFunc func(string, *imapclient.Options) (*imapclient.Client, error)
+
+// WithDialTLS supplies a context-scoped IMAP dialer for in-process TLS fixtures.
+// Normal callers use the verified network dialer.
+func WithDialTLS(ctx context.Context, dial func(string, *imapclient.Options) (*imapclient.Client, error)) context.Context {
+	return context.WithValue(ctx, dialTLSKey{}, dialTLSFunc(dial))
+}
 
 type Folder struct {
 	Name       string             `json:"name"`
@@ -42,10 +62,12 @@ type Page struct {
 	HasMore       bool      `json:"has_more"`
 }
 type Body struct {
-	Message   Message `json:"message"`
-	RawBase64 string  `json:"raw_base64"`
-	Truncated bool    `json:"truncated"`
-	TotalSize int64   `json:"total_size"`
+	Message    Message `json:"message"`
+	RawBase64  string  `json:"raw_base64"`
+	Offset     int64   `json:"offset"`
+	NextOffset int64   `json:"next_offset,omitempty"`
+	Truncated  bool    `json:"truncated"`
+	TotalSize  int64   `json:"total_size"`
 }
 
 func connect(ctx context.Context, a config.Account) (*imapclient.Client, func(), error) {
@@ -53,9 +75,54 @@ func connect(ctx context.Context, a config.Account) (*imapclient.Client, func(),
 	if err != nil {
 		return nil, nil, err
 	}
+	var tlsConfig *tls.Config
+	if a.IMAPCAFile != "" {
+		f, err := os.Open(a.IMAPCAFile)
+		if err != nil {
+			return nil, nil, errors.New("cannot read IMAP CA certificate")
+		}
+		pem, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
+		_ = f.Close()
+		if err != nil || len(pem) > 1<<20 {
+			return nil, nil, errors.New("cannot read IMAP CA certificate")
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, nil, errors.New("cannot load system CA certificates")
+		}
+		if !roots.AppendCertsFromPEM(pem) {
+			return nil, nil, errors.New("invalid IMAP CA certificate")
+		}
+		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}
+	}
 	addr := net.JoinHostPort(a.IMAPHost, fmt.Sprint(a.IMAPPort))
-	c, err := imapclient.DialTLS(addr, &imapclient.Options{Dialer: &net.Dialer{Timeout: 10 * time.Second}})
+	dial := dialTLSFunc(imapclient.DialTLS)
+	if injected, ok := ctx.Value(dialTLSKey{}).(dialTLSFunc); ok {
+		dial = injected
+	}
+	queueCtx, stopWaiting := context.WithTimeout(ctx, 10*time.Second)
+	defer stopWaiting()
+	if err := queueCtx.Err(); err != nil {
+		return nil, nil, errors.New("IMAP connection request canceled")
+	}
+	select {
+	case imapConnectionSlots <- struct{}{}:
+	case <-queueCtx.Done():
+		return nil, nil, errors.New("IMAP connection capacity unavailable")
+	}
+	if _, injected := ctx.Value(dialTLSKey{}).(dialTLSFunc); !injected {
+		if err := imapLoginPacer.Wait(queueCtx); err != nil {
+			<-imapConnectionSlots
+			return nil, nil, errors.New("IMAP login rate capacity unavailable")
+		}
+	}
+	if err := queueCtx.Err(); err != nil {
+		<-imapConnectionSlots
+		return nil, nil, errors.New("IMAP connection request canceled")
+	}
+	c, err := dial(addr, &imapclient.Options{Dialer: &net.Dialer{Timeout: 10 * time.Second}, TLSConfig: tlsConfig})
 	if err != nil {
+		<-imapConnectionSlots
 		return nil, nil, errors.New("IMAP TLS connection failed")
 	}
 	deadlineCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -69,7 +136,15 @@ func connect(ctx context.Context, a config.Account) (*imapclient.Client, func(),
 		case <-done:
 		}
 	}()
-	closeFn := func() { close(done); cancel(); closeClient() }
+	var cleanupOnce sync.Once
+	closeFn := func() {
+		cleanupOnce.Do(func() {
+			close(done)
+			cancel()
+			closeClient()
+			<-imapConnectionSlots
+		})
+	}
 	if err := c.Login(a.Address, p).Wait(); err != nil {
 		closeFn()
 		return nil, nil, errors.New("IMAP authentication failed")
@@ -133,6 +208,10 @@ func ListFolders(ctx context.Context, a config.Account) ([]Folder, error) {
 		return nil, err
 	}
 	defer closeFn()
+	return listFolders(c)
+}
+
+func listFolders(c *imapclient.Client) ([]Folder, error) {
 	cmd := c.List("", "*", nil)
 	out := make([]Folder, 0, 32)
 	for r := cmd.Next(); r != nil; r = cmd.Next() {
@@ -169,14 +248,22 @@ func List(ctx context.Context, a config.Account, folder string, before uint32, l
 
 type SearchFilter struct {
 	From    string `json:"from,omitempty"`
+	To      string `json:"to,omitempty"`
 	Subject string `json:"subject,omitempty"`
 	Text    string `json:"text,omitempty"`
+	Since   string `json:"since,omitempty"`
+	Before  string `json:"before,omitempty"`
 	Unread  bool   `json:"unread,omitempty"`
+	Flagged *bool  `json:"flagged,omitempty"`
 }
 
 func Search(ctx context.Context, a config.Account, folder string, before uint32, limit int, filter SearchFilter) (Page, error) {
 	if limit < 1 || limit > maxPage {
 		return Page{}, fmt.Errorf("limit must be 1..%d", maxPage)
+	}
+	criteria, err := searchCriteria(filter)
+	if err != nil {
+		return Page{}, err
 	}
 	c, closeFn, err := connect(ctx, a)
 	if err != nil {
@@ -188,24 +275,6 @@ func Search(ctx context.Context, a config.Account, folder string, before uint32,
 		return Page{}, err
 	}
 	result := Page{Folder: folder, UIDValidity: sel.UIDValidity, Messages: []Message{}}
-	criteria := &imap.SearchCriteria{}
-	for _, field := range []struct{ key, value string }{{"From", filter.From}, {"Subject", filter.Subject}} {
-		if field.value != "" {
-			if len(field.value) > 256 || strings.ContainsAny(field.value, "\x00\r\n") {
-				return Page{}, errors.New("invalid search term")
-			}
-			criteria.Header = append(criteria.Header, imap.SearchCriteriaHeaderField{Key: field.key, Value: field.value})
-		}
-	}
-	if filter.Text != "" {
-		if len(filter.Text) > 256 || strings.ContainsAny(filter.Text, "\x00\r\n") {
-			return Page{}, errors.New("invalid search term")
-		}
-		criteria.Text = []string{filter.Text}
-	}
-	if filter.Unread {
-		criteria.NotFlag = []imap.Flag{imap.FlagSeen}
-	}
 	// Bound the search to the 5000 most recent UID numbers. Sparse mailboxes may need repeated calls.
 	upper := uint32(sel.UIDNext)
 	if before > 0 && before < upper {
@@ -257,9 +326,61 @@ func Search(ctx context.Context, a config.Account, folder string, before uint32,
 	}
 	return result, nil
 }
+
+func searchCriteria(filter SearchFilter) (*imap.SearchCriteria, error) {
+	criteria := &imap.SearchCriteria{}
+	for _, field := range []struct{ key, value string }{{"From", filter.From}, {"To", filter.To}, {"Subject", filter.Subject}} {
+		if field.value != "" {
+			if len(field.value) > 256 || strings.ContainsAny(field.value, "\x00\r\n") {
+				return nil, errors.New("invalid search term")
+			}
+			criteria.Header = append(criteria.Header, imap.SearchCriteriaHeaderField{Key: field.key, Value: field.value})
+		}
+	}
+	if filter.Text != "" {
+		if len(filter.Text) > 256 || strings.ContainsAny(filter.Text, "\x00\r\n") {
+			return nil, errors.New("invalid search term")
+		}
+		criteria.Text = []string{filter.Text}
+	}
+	for _, date := range []struct {
+		value  string
+		target *time.Time
+	}{{filter.Since, &criteria.Since}, {filter.Before, &criteria.Before}} {
+		if date.value == "" {
+			continue
+		}
+		parsed, err := time.Parse("2006-01-02", date.value)
+		if err != nil || parsed.Format("2006-01-02") != date.value {
+			return nil, errors.New("search dates must use YYYY-MM-DD")
+		}
+		*date.target = parsed
+	}
+	if !criteria.Since.IsZero() && !criteria.Before.IsZero() && !criteria.Since.Before(criteria.Before) {
+		return nil, errors.New("since must be before before")
+	}
+	if filter.Unread {
+		criteria.NotFlag = append(criteria.NotFlag, imap.FlagSeen)
+	}
+	if filter.Flagged != nil {
+		if *filter.Flagged {
+			criteria.Flag = append(criteria.Flag, imap.FlagFlagged)
+		} else {
+			criteria.NotFlag = append(criteria.NotFlag, imap.FlagFlagged)
+		}
+	}
+	return criteria, nil
+}
 func Get(ctx context.Context, a config.Account, folder string, uid, validity uint32, maxBytes int) (Body, error) {
+	return GetRange(ctx, a, folder, uid, validity, 0, maxBytes)
+}
+
+func GetRange(ctx context.Context, a config.Account, folder string, uid, validity uint32, offset int64, maxBytes int) (Body, error) {
 	if err := validateUID(uid); err != nil {
 		return Body{}, err
+	}
+	if offset < 0 || offset > 1<<30 {
+		return Body{}, errors.New("offset must be 0..1073741824")
 	}
 	if maxBytes < 1 || maxBytes > 262144 {
 		return Body{}, errors.New("max_bytes must be 1..262144")
@@ -276,7 +397,7 @@ func Get(ctx context.Context, a config.Account, folder string, uid, validity uin
 	if err := checkValidity(sel.UIDValidity, validity); err != nil {
 		return Body{}, err
 	}
-	section := &imap.FetchItemBodySection{Peek: true, Partial: &imap.SectionPartial{Offset: 0, Size: int64(maxBytes)}}
+	section := &imap.FetchItemBodySection{Peek: true, Partial: &imap.SectionPartial{Offset: offset, Size: int64(maxBytes)}}
 	messages, err := c.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{UID: true, Envelope: true, Flags: true, RFC822Size: true, BodySection: []*imap.FetchItemBodySection{section}}).Collect()
 	if err != nil {
 		return Body{}, errors.New("message fetch failed")
@@ -285,10 +406,14 @@ func Get(ctx context.Context, a config.Account, folder string, uid, validity uin
 		return Body{}, errors.New("message not found")
 	}
 	m := messages[0]
-	b := Body{Message: toMessage(m, sel.UIDValidity), TotalSize: m.RFC822Size}
+	b := Body{Message: toMessage(m, sel.UIDValidity), TotalSize: m.RFC822Size, Offset: offset}
 	if len(m.BodySection) > 0 {
 		b.RawBase64 = base64.StdEncoding.EncodeToString(m.BodySection[0].Bytes)
-		b.Truncated = int64(len(m.BodySection[0].Bytes)) < b.TotalSize
+		end := offset + int64(len(m.BodySection[0].Bytes))
+		b.Truncated = end < b.TotalSize
+		if b.Truncated && len(m.BodySection[0].Bytes) > 0 {
+			b.NextOffset = end
+		}
 	}
 	return b, nil
 }
@@ -369,13 +494,53 @@ func CopyOrMove(ctx context.Context, a config.Account, source, target string, ui
 		if err != nil {
 			return nil, errors.New("move failed or outcome uncertain; inspect both folders before retrying")
 		}
+		if err := verifyTransfer(c, set, target, uid, data.UIDValidity, data.DestUIDs, true); err != nil {
+			return nil, err
+		}
 		return data, nil
 	}
 	data, err := c.Copy(set, target).Wait()
 	if err != nil {
 		return nil, errors.New("copy failed or outcome uncertain; inspect destination before retrying")
 	}
+	if err := verifyTransfer(c, set, target, uid, data.UIDValidity, data.DestUIDs, false); err != nil {
+		return nil, err
+	}
 	return data, nil
+}
+
+func verifyTransfer(c *imapclient.Client, sourceSet imap.UIDSet, target string, sourceUID, destinationValidity uint32, destination imap.NumSet, move bool) error {
+	uncertain := errors.New("transfer acknowledged but postcondition uncertain; inspect both folders before retrying")
+	source, err := c.Fetch(sourceSet, &imap.FetchOptions{UID: true}).Collect()
+	if err != nil || (len(source) == 0) != move {
+		return uncertain
+	}
+	if !move && (len(source) != 1 || uint32(source[0].UID) != sourceUID) {
+		return uncertain
+	}
+	// COPYUID is available with UIDPLUS or IMAP4rev2. Verify the destination
+	// when the server supplies its UID; otherwise the successful command reply
+	// is the strongest destination evidence the protocol provides.
+	if destination == nil {
+		return nil
+	}
+	uids, ok := destination.(imap.UIDSet)
+	if !ok {
+		return uncertain
+	}
+	numbers, ok := uids.Nums()
+	if !ok || len(numbers) != 1 {
+		return uncertain
+	}
+	selected, err := selectFolder(c, target, true)
+	if err != nil || selected.UIDValidity != destinationValidity {
+		return uncertain
+	}
+	found, err := c.Fetch(imap.UIDSetNum(numbers[0]), &imap.FetchOptions{UID: true}).Collect()
+	if err != nil || len(found) != 1 || found[0].UID != numbers[0] {
+		return uncertain
+	}
+	return nil
 }
 
 // FolderStatus returns counts without selecting or changing a mailbox.

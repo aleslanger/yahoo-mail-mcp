@@ -26,3 +26,29 @@ func TestParseMIMELimit(t *testing.T) {
 		t.Fatal("oversized MIME accepted")
 	}
 }
+
+func TestParseMIMEReaderTruncatesLargeText(t *testing.T) {
+	raw := "From: sender@example.com\r\nContent-Type: text/plain\r\n\r\n" + strings.Repeat("x", 70000)
+	got, err := parseMIMEReader(strings.NewReader(raw))
+	if err != nil || !got.BodyTruncated || len(got.Plain) != 65536 {
+		t.Fatalf("large text: length=%d truncated=%v error=%v", len(got.Plain), got.BodyTruncated, err)
+	}
+}
+
+func TestParseMIMEPartCountBoundary(t *testing.T) {
+	for _, count := range []int{100, 101} {
+		var raw strings.Builder
+		raw.WriteString("MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=parts\r\n\r\n")
+		for i := 0; i < count; i++ {
+			raw.WriteString("--parts\r\nContent-Type: text/plain\r\n\r\nx\r\n")
+		}
+		raw.WriteString("--parts--\r\n")
+		_, err := ParseMIME([]byte(raw.String()))
+		if count == 100 && err != nil {
+			t.Fatalf("rejected exactly 100 parts: %v", err)
+		}
+		if count == 101 && err == nil {
+			t.Fatal("accepted 101 parts")
+		}
+	}
+}

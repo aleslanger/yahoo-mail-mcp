@@ -11,6 +11,7 @@ import (
 	msgmail "github.com/emersion/go-message/mail"
 	"io"
 	"mime"
+	"os"
 	"strings"
 )
 
@@ -54,16 +55,39 @@ func ParseMIME(raw []byte) (ParsedMessage, error) {
 	if len(raw) > 262144 {
 		return ParsedMessage{}, errors.New("MIME input exceeds 256 KiB")
 	}
-	reader, err := msgmail.CreateReader(bytes.NewReader(raw))
+	return parseMIMEReader(bytes.NewReader(raw))
+}
+
+// ReadParsedLarge parses bounded MIME data without returning its raw bytes.
+func ReadParsedLarge(ctx context.Context, a config.Account, folder string, uid, validity uint32) (ParsedMessage, error) {
+	rawFile, message, err := fetchRawToTemp(ctx, a, folder, uid, validity, os.TempDir())
+	if err != nil {
+		return ParsedMessage{}, err
+	}
+	defer os.Remove(rawFile.Name())
+	defer rawFile.Close()
+	parsed, err := parseMIMEReader(rawFile)
+	if err != nil {
+		return ParsedMessage{}, err
+	}
+	parsed.Message = message
+	return parsed, nil
+}
+
+func parseMIMEReader(source io.Reader) (ParsedMessage, error) {
+	reader, err := msgmail.CreateReader(source)
 	if err != nil && reader == nil {
 		return ParsedMessage{}, errors.New("malformed MIME message")
 	}
 	defer reader.Close()
 	out := ParsedMessage{Attachments: []AttachmentInfo{}}
-	for index := 0; index < 100; index++ {
+	for index := 0; ; index++ {
 		part, err := reader.NextPart()
 		if err == io.EOF {
 			return out, nil
+		}
+		if index >= 100 {
+			return ParsedMessage{}, errors.New("MIME part count exceeds 100")
 		}
 		if err != nil && part == nil {
 			return ParsedMessage{}, errors.New("malformed MIME part")
@@ -112,7 +136,6 @@ func ParseMIME(raw []byte) (ParsedMessage, error) {
 			out.Attachments = append(out.Attachments, AttachmentInfo{Index: index + 1, Filename: name, ContentType: contentType, ContentID: part.Header.Get("Content-ID"), Size: int64(len(body)) + remaining, Inline: disp == "inline"})
 		}
 	}
-	return ParsedMessage{}, errors.New("MIME part count exceeds 100")
 }
 
 type AttachmentData struct {

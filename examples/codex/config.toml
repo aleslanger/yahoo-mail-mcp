@@ -2,3 +2,4 @@
 command = "/absolute/path/to/yahoo-mcp"
 args = ["serve"]
 env = { YAHOO_MCP_CONFIG = "/absolute/path/to/config.json" }
+env_vars = ["YAHOO_MCP_PASSWORD_PERSONAL"]
