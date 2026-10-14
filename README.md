@@ -2,7 +2,7 @@
 
 A local [Model Context Protocol](https://modelcontextprotocol.io) server, written in Go, that gives MCP clients such as Claude Code and Codex bounded access to a Yahoo Mail account over IMAP and SMTP. It can read and search mail, organize messages, manage drafts, and send, reply and forward with explicit safeguards.
 
-> **Status: not production ready.** The target is a supervised, single-user server on your own machine over stdio. Write permissions are disabled by default; enable them only while you supervise the client. Automation rules, sync and remote HTTP transport are not implemented.
+> **Status: not production ready.** The target is a supervised, single-user server on your own machine, over stdio or loopback HTTP. Write permissions are disabled by default; enable them only while you supervise the client or the rules. Release binaries are unsigned and have only been run on Linux.
 
 ## Features
 
@@ -12,6 +12,9 @@ A local [Model Context Protocol](https://modelcontextprotocol.io) server, writte
 - **Drafts:** create, list, read, update, delete and send the exact stored draft.
 - **Send:** plain or HTML messages with small attachments, reply, reply-all and forward. Every send needs a preview digest and an idempotency key.
 - **Batch:** preview, then confirm move, copy or flag changes for 1–20 exact UIDs.
+- **Local index:** read-only incremental copy of message headers for search and sorting across a whole mailbox.
+- **Automation:** rules that move, trash, mark read or flag matching mail, dry-run by default.
+- **Transports:** stdio, or Streamable HTTP on a loopback address with a bearer token.
 - **Safety:** permissions per account, UIDVALIDITY checks, MOVE only when the server advertises it, and a durable send journal that never resends a submission with an uncertain outcome.
 
 ## Requirements
@@ -113,6 +116,10 @@ A first session: `account_list` → `account_test_connection` (`account: "person
 | `trash_folder` | account | Explicit Trash folder when the server's special-use attribute is ambiguous |
 | `journal_dir` | top level | Absolute path to a private directory for the send and batch journal. Required for sending, batches and deletion. |
 | `download_dir` | top level | Absolute path to a private 0700 directory for `attachment_save` |
+| `index_dir` | top level | Absolute path to a private directory for the local header index |
+| `http_listen` | top level | Loopback address for `serve-http`, default `127.0.0.1:8765`. Other addresses are rejected. |
+| `allow_automation` | account | Lets `rules-run --apply` change mail. Requires `allow_organize` and `journal_dir`. |
+| `rules` | top level | Automation rules, see [Automation rules](#automation-rules) |
 
 ## Tools
 
@@ -127,11 +134,48 @@ A first session: `account_list` → `account_test_connection` (`account: "person
 | Drafts | `draft_create`, `draft_list`, `draft_get`, `draft_update`, `draft_delete`, `draft_prepare_send`, `draft_send` |
 | Send | `email_prepare`, `email_send` |
 | Reply and forward | `email_reply_context`, `email_reply_prepare`, `email_reply_send`, `email_forward_prepare`, `email_forward_send` |
+| Local index | `index_sync`, `index_search`, `index_status` |
 
 Every message reference consists of `folder`, `uid` and `uid_validity`. Every tool that sends or batches works in two steps:
 
 - **Sending:** call the `*_prepare` tool and inspect the preview. Then call the matching send tool with the same content, a unique `idempotency_key` and the returned digest as `expected_digest`.
 - **Batches:** `email_batch_prepare` returns a short-lived token. Execute it with `email_batch_execute` and `confirm: true`. Actions: `move`, `copy`, `mark_read`, `mark_unread`, `flag`, `unflag` and `delete`.
+
+## Local header index
+
+`yahoo-mcp sync <alias> [folder...]` copies message headers (sender, recipients, subject, date, size, flags) into `index_dir`. Without folder names it covers every selectable folder. It only reads: folders are opened read-only and nothing is marked read. Later runs fetch only new messages, drop expunged ones and refresh flags. If UIDVALIDITY changes, the folder is indexed again. A failed step is retried after 5, 15 and 45 seconds, because Yahoo sometimes rejects rapid repeated logins.
+
+The `index_search` tool then filters and sorts across all indexed folders without contacting the server. Results carry `folder`, `uid` and `uid_validity` for the normal tools, and may be stale; `index_status` shows when each folder was last synced. The index holds message metadata in plain JSON files (mode 0600 in a 0700 directory), so protect it like the mailbox itself.
+
+## Automation rules
+
+Rules organize mail without an MCP client. They never send mail and never delete permanently.
+
+```json
+"rules": [
+  { "name": "newsletters", "account": "personal", "folder": "INBOX",
+    "match": { "from": "news@example.com" }, "action": "move", "target_folder": "Newsletters" },
+  { "name": "old-promotions", "account": "personal", "folder": "Promotions",
+    "match": { "older_than_days": 30 }, "action": "trash" }
+]
+```
+
+- **Match:** `from`, `to`, `subject` (header substrings), `older_than_days` and `unread`. All set fields must match, and at least one of `from`, `to`, `subject` or `older_than_days` is required.
+- **Actions:** `move` (needs `target_folder`), `trash`, `mark_read` and `flag`.
+- `yahoo-mcp rules-run` is a dry run that prints matching messages as JSON. `yahoo-mcp rules-run --apply` executes them; this requires `allow_automation` on the account.
+- Each rule handles at most 20 of the oldest matching messages per run, as one journaled and verified batch. Rules are idempotent: moved messages leave the folder, and `mark_read` and `flag` skip messages that are already read or flagged. A failing rule is reported without stopping the others, and the command then exits with an error.
+- To run rules regularly, use cron or a systemd timer, for example `*/15 * * * * YAHOO_MCP_CONFIG=/path/config.json /path/yahoo-mcp rules-run --apply`.
+
+## HTTP transport
+
+For clients that cannot start a stdio process, `yahoo-mcp serve-http` serves MCP over Streamable HTTP on `http_listen`. Only loopback addresses are allowed; it is not meant for other machines.
+
+```sh
+yahoo-mcp http-token    # once: creates ~/.config/yahoo-mail-mcp/http-token and prints the token
+yahoo-mcp serve-http    # listens on http://127.0.0.1:8765/
+```
+
+Clients send `Authorization: Bearer <token>`. To rotate the token, delete the file and run `http-token` again. The server rejects cross-origin browser requests and Host headers other than localhost (DNS rebinding), limits request bodies to 16 MiB and throttles repeated failed logins. The same account permissions apply as over stdio.
 
 ## Safety and limits
 
