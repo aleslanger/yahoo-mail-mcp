@@ -144,3 +144,39 @@ func TestTrashOverrideRejectsControlCharacters(t *testing.T) {
 		t.Fatal("unsafe Trash folder override accepted")
 	}
 }
+
+func TestSMTPSecurityDefaultsFromPortAndRejectsUnknownMode(t *testing.T) {
+	cases := []struct {
+		name    string
+		account string
+		want    string
+		wantErr bool
+	}{
+		{name: "implicit TLS by default", account: `{"alias":"main","address":"account@example.com"}`, want: SMTPSecurityTLS},
+		{name: "port 587 implies STARTTLS", account: `{"alias":"main","address":"account@example.com","smtp_port":587}`, want: SMTPSecuritySTARTTLS},
+		{name: "explicit STARTTLS", account: `{"alias":"main","address":"account@example.com","smtp_port":2525,"smtp_security":"starttls"}`, want: SMTPSecuritySTARTTLS},
+		{name: "explicit TLS on 587", account: `{"alias":"main","address":"account@example.com","smtp_port":587,"smtp_security":"tls"}`, want: SMTPSecurityTLS},
+		{name: "plaintext rejected", account: `{"alias":"main","address":"account@example.com","smtp_security":"none"}`, wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(`{"accounts":[`+tc.account+`]}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			c, err := Load(path)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("unsupported smtp_security accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := c.Accounts[0].SMTPSecurity; got != tc.want {
+				t.Fatalf("smtp_security = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

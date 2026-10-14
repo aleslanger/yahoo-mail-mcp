@@ -161,8 +161,17 @@ func connectSMTP(ctx context.Context, a config.Account, password string, tlsConf
 	releaseSlot := func() { <-smtpConnectionSlots }
 	addr := net.JoinHostPort(a.SMTPHost, fmt.Sprint(a.SMTPPort))
 	dial := dialFunc(func(ctx context.Context, address string, cfg *tls.Config) (net.Conn, error) {
-		return (&tls.Dialer{NetDialer: &net.Dialer{Timeout: 10 * time.Second}, Config: cfg}).DialContext(ctx, "tcp", address)
+		netDialer := &net.Dialer{Timeout: 10 * time.Second}
+		if cfg == nil {
+			return netDialer.DialContext(ctx, "tcp", address)
+		}
+		return (&tls.Dialer{NetDialer: netDialer, Config: cfg}).DialContext(ctx, "tcp", address)
 	})
+	startTLS := a.SMTPSecurity == config.SMTPSecuritySTARTTLS
+	dialConfig := tlsConfig
+	if startTLS {
+		dialConfig = nil
+	}
 	if injected, ok := ctx.Value(dialKey{}).(dialFunc); ok {
 		dial = injected
 	} else if err := smtpLoginPacer.Wait(queueCtx); err != nil {
@@ -173,7 +182,7 @@ func connectSMTP(ctx context.Context, a config.Account, password string, tlsConf
 		releaseSlot()
 		return nil, nil, errors.New("SMTP connection request canceled")
 	}
-	conn, err := dial(ctx, addr, tlsConfig)
+	conn, err := dial(ctx, addr, dialConfig)
 	if err != nil {
 		releaseSlot()
 		return nil, nil, errors.New("SMTP TLS connection failed")
@@ -194,10 +203,29 @@ func connectSMTP(ctx context.Context, a config.Account, password string, tlsConf
 		closeConn()
 		return nil, nil, errors.New("SMTP greeting failed")
 	}
+	if startTLS {
+		if err := upgradeSTARTTLS(client, tlsConfig); err != nil {
+			_ = client.Close()
+			closeConn()
+			return nil, nil, err
+		}
+	}
 	if err := client.Auth(smtp.PlainAuth("", a.Address, password, a.SMTPHost)); err != nil {
 		_ = client.Close()
 		closeConn()
 		return nil, nil, errors.New("SMTP authentication failed")
 	}
 	return client, func() { _ = client.Close(); closeConn() }, nil
+}
+
+// upgradeSTARTTLS refuses to continue unless the server offers STARTTLS, so
+// credentials are never sent over a plaintext connection.
+func upgradeSTARTTLS(client *smtp.Client, tlsConfig *tls.Config) error {
+	if ok, _ := client.Extension("STARTTLS"); !ok {
+		return errors.New("SMTP server does not offer STARTTLS")
+	}
+	if err := client.StartTLS(tlsConfig); err != nil {
+		return errors.New("SMTP STARTTLS negotiation failed")
+	}
+	return nil
 }

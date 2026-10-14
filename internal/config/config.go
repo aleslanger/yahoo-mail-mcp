@@ -14,6 +14,13 @@ import (
 
 var aliasPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 
+// SMTP transport security modes; plaintext submission is never supported.
+const (
+	SMTPSecurityTLS      = "tls"
+	SMTPSecuritySTARTTLS = "starttls"
+	smtpSubmissionPort   = 587
+)
+
 type Account struct {
 	Alias         string `json:"alias"`
 	Address       string `json:"address"`
@@ -24,6 +31,7 @@ type Account struct {
 	SMTPHost      string `json:"smtp_host,omitempty"`
 	SMTPPort      int    `json:"smtp_port,omitempty"`
 	SMTPCAFile    string `json:"smtp_ca_file,omitempty"`
+	SMTPSecurity  string `json:"smtp_security,omitempty"`
 	TrashFolder   string `json:"trash_folder,omitempty"`
 	AllowSend     bool   `json:"allow_send"`
 }
@@ -94,6 +102,15 @@ func validate(c Config) (Config, error) {
 		}
 		if a.SMTPPort < 1 || a.SMTPPort > 65535 {
 			return c, fmt.Errorf("account %s has invalid SMTP port", a.Alias)
+		}
+		if a.SMTPSecurity == "" {
+			a.SMTPSecurity = SMTPSecurityTLS
+			if a.SMTPPort == smtpSubmissionPort {
+				a.SMTPSecurity = SMTPSecuritySTARTTLS
+			}
+		}
+		if a.SMTPSecurity != SMTPSecurityTLS && a.SMTPSecurity != SMTPSecuritySTARTTLS {
+			return c, fmt.Errorf("account %s has invalid smtp_security; use tls or starttls", a.Alias)
 		}
 		if strings.ContainsAny(a.TrashFolder, "\x00\r\n") {
 			return c, fmt.Errorf("account %s has invalid trash_folder", a.Alias)

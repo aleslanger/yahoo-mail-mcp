@@ -120,7 +120,7 @@ func TestComposeRejectsInjectionAndOmitsBccHeader(t *testing.T) {
 	}
 }
 
-func smtpFixture(t *testing.T, accepted bool, dialCount *atomic.Int32) (context.Context, config.Account, <-chan string) {
+func fixtureCertificate(t *testing.T) (tls.Certificate, string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -148,6 +148,64 @@ func smtpFixture(t *testing.T, accepted bool, dialCount *atomic.Int32) (context.
 	if err := os.WriteFile(caPath, certPEM, 0600); err != nil {
 		t.Fatal(err)
 	}
+	return cert, caPath
+}
+
+// serveSMTPSession answers one authenticated SMTP session on an already secure connection.
+func serveSMTPSession(secure io.ReadWriter, greet, accepted bool, messageCh chan<- string) {
+	r := bufio.NewReader(secure)
+	if greet {
+		fmt.Fprint(secure, "220 smtp.test ready\r\n")
+	}
+	var body strings.Builder
+	inData := false
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+		upper := strings.ToUpper(strings.TrimSpace(line))
+		if inData {
+			if line == ".\r\n" {
+				messageCh <- body.String()
+				if !accepted {
+					return
+				}
+				fmt.Fprint(secure, "250 queued\r\n")
+				inData = false
+			} else {
+				body.WriteString(line)
+			}
+			continue
+		}
+		switch {
+		case strings.HasPrefix(upper, "EHLO "):
+			fmt.Fprint(secure, "250-smtp.test\r\n250 AUTH PLAIN\r\n")
+		case strings.HasPrefix(upper, "AUTH PLAIN "):
+			decoded, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(line[len("AUTH PLAIN "):]))
+			if !strings.Contains(string(decoded), "fixture-secret") {
+				fmt.Fprint(secure, "535 bad auth\r\n")
+				return
+			}
+			fmt.Fprint(secure, "235 authenticated\r\n")
+		case strings.HasPrefix(upper, "MAIL FROM:"), strings.HasPrefix(upper, "RCPT TO:"):
+			fmt.Fprint(secure, "250 ok\r\n")
+		case upper == "DATA":
+			fmt.Fprint(secure, "354 enter data\r\n")
+			inData = true
+		case upper == "QUIT":
+			fmt.Fprint(secure, "221 bye\r\n")
+			return
+		default:
+			fmt.Fprint(secure, "500 unsupported\r\n")
+			return
+		}
+	}
+}
+
+func smtpFixture(t *testing.T, accepted bool, dialCount *atomic.Int32) (context.Context, config.Account, <-chan string) {
+	t.Helper()
+	cert, caPath := fixtureCertificate(t)
 	messageCh := make(chan string, 1)
 	ctx := context.WithValue(context.Background(), dialKey{}, dialFunc(func(_ context.Context, _ string, cfg *tls.Config) (net.Conn, error) {
 		dialCount.Add(1)
@@ -159,54 +217,7 @@ func smtpFixture(t *testing.T, accepted bool, dialCount *atomic.Int32) (context.
 				messageCh <- "handshake: " + err.Error()
 				return
 			}
-			r := bufio.NewReader(secure)
-			fmt.Fprint(secure, "220 smtp.test ready\r\n")
-			var body strings.Builder
-			inData := false
-			for {
-				line, err := r.ReadString('\n')
-				if err != nil {
-					return
-				}
-				upper := strings.ToUpper(strings.TrimSpace(line))
-				if inData {
-					if line == ".\r\n" {
-						messageCh <- body.String()
-						if accepted {
-							fmt.Fprint(secure, "250 queued\r\n")
-						}
-						if !accepted {
-							return
-						}
-						inData = false
-					} else {
-						body.WriteString(line)
-					}
-					continue
-				}
-				switch {
-				case strings.HasPrefix(upper, "EHLO "):
-					fmt.Fprint(secure, "250-smtp.test\r\n250 AUTH PLAIN\r\n")
-				case strings.HasPrefix(upper, "AUTH PLAIN "):
-					decoded, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(line[len("AUTH PLAIN "):]))
-					if !strings.Contains(string(decoded), "fixture-secret") {
-						fmt.Fprint(secure, "535 bad auth\r\n")
-						return
-					}
-					fmt.Fprint(secure, "235 authenticated\r\n")
-				case strings.HasPrefix(upper, "MAIL FROM:"), strings.HasPrefix(upper, "RCPT TO:"):
-					fmt.Fprint(secure, "250 ok\r\n")
-				case upper == "DATA":
-					fmt.Fprint(secure, "354 enter data\r\n")
-					inData = true
-				case upper == "QUIT":
-					fmt.Fprint(secure, "221 bye\r\n")
-					return
-				default:
-					fmt.Fprint(secure, "500 unsupported\r\n")
-					return
-				}
-			}
+			serveSMTPSession(secure, true, accepted, messageCh)
 		}()
 		clientTLS := tls.Client(clientConn, cfg)
 		if err := clientTLS.Handshake(); err != nil {
@@ -216,7 +227,7 @@ func smtpFixture(t *testing.T, accepted bool, dialCount *atomic.Int32) (context.
 		return clientTLS, nil
 	}))
 	t.Setenv("YAHOO_MCP_PASSWORD_SENDER", "fixture-secret")
-	a := config.Account{Alias: "sender", Address: "sender@example.com", SMTPHost: "smtp.test", SMTPPort: 465, SMTPCAFile: caPath, AllowSend: true}
+	a := config.Account{Alias: "sender", Address: "sender@example.com", SMTPHost: "smtp.test", SMTPPort: 465, SMTPSecurity: config.SMTPSecurityTLS, SMTPCAFile: caPath, AllowSend: true}
 	return ctx, a, messageCh
 }
 
