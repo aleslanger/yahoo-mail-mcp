@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-imap/v2/imapserver"
@@ -315,7 +315,10 @@ func TestAdvancedSearch(t *testing.T) {
 	ctx, a := localIMAP(t, true)
 	uid := appendFixture(t, ctx, a)
 	flagged := false
-	filter := SearchFilter{To: a.Address, Since: time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02"), Before: time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02"), Unread: true, Flagged: &flagged}
+	// The fixture server compares the internal date in its own (local) zone,
+	// so the window must be computed in local time, not UTC.
+	now := time.Now()
+	filter := SearchFilter{To: a.Address, Since: now.AddDate(0, 0, -1).Format("2006-01-02"), Before: now.AddDate(0, 0, 1).Format("2006-01-02"), Unread: true, Flagged: &flagged}
 	page, err := Search(ctx, a, "INBOX", 0, 10, filter)
 	if err != nil || len(page.Messages) != 1 || page.Messages[0].UID != uid {
 		t.Fatalf("advanced search: %+v, %v", page, err)
