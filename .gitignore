@@ -5,3 +5,9 @@ config.json
 *.log
 dist/
 .state/
+
+# Development-only material, kept local
+docs/
+IMPLEMENTATION_STATUS.md
+zadani.md
+live_*_test.go
