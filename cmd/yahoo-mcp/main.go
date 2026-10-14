@@ -11,12 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/mail"
-	"github.com/ales/yahoo-mail-mcp/internal/rules"
-	"github.com/ales/yahoo-mail-mcp/internal/send"
-	"github.com/ales/yahoo-mail-mcp/internal/server"
-	"github.com/ales/yahoo-mail-mcp/internal/storage"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/mail"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/rules"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/send"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/server"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/storage"
 )
 
 const version = "0.2.0"

@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/mail"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/mail"
 )
 
 // Fetcher performs one bounded read-only synchronization step against IMAP.

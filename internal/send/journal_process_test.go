@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 )
 
 func TestJournalSurvivesProcessExit(t *testing.T) {

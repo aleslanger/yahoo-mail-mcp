@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/mail"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/mail"
 	"github.com/emersion/go-imap/v2"
 )
 

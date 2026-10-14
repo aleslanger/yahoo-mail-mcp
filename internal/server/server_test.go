@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"errors"
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/send"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/send"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

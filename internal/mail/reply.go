@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 )
 
 var replyMessageID = regexp.MustCompile(`^<[^<>[:space:]@]+@[^<>[:space:]@]+>$`)

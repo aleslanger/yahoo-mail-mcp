@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 	mail "github.com/emersion/go-message/mail"
 )
 

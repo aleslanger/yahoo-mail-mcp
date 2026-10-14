@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/mail"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/mail"
 )
 
 func deleteOps(t *testing.T, deleted *[]uint32) mailOperations {

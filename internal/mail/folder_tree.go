@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 	"github.com/emersion/go-imap/v2"
 )
 

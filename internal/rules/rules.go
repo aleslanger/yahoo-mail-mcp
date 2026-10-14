@@ -7,9 +7,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/batch"
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/mail"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/batch"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/mail"
 )
 
 // maxRuleActions caps each rule per run at one batch.

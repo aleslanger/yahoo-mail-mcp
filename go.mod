@@ -1,4 +1,4 @@
-module github.com/ales/yahoo-mail-mcp
+module github.com/aleslanger/yahoo-mail-mcp
 
 go 1.25.0
 

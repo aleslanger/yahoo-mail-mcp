@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/batch"
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/mail"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/batch"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/mail"
 )
 
 var now = time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)

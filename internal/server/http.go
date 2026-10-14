@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/time/rate"
 )

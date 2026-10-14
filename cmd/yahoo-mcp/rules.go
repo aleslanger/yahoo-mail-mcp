@@ -8,8 +8,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/rules"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/rules"
 )
 
 const rulesRunTimeout = 10 * time.Minute

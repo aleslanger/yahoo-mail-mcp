@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 	"golang.org/x/time/rate"
 )
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ales/yahoo-mail-mcp/internal/storage"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/storage"
 )
 
 // Opt-in local growth measurement; it never connects to a mailbox.

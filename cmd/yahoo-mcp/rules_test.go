@@ -7,10 +7,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ales/yahoo-mail-mcp/internal/batch"
-	"github.com/ales/yahoo-mail-mcp/internal/config"
-	"github.com/ales/yahoo-mail-mcp/internal/mail"
-	"github.com/ales/yahoo-mail-mcp/internal/rules"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/batch"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/mail"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/rules"
 )
 
 func TestRulesRunDefaultsToDryRunAndReportsFailures(t *testing.T) {

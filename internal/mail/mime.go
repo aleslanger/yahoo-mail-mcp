@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/ales/yahoo-mail-mcp/internal/config"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 	_ "github.com/emersion/go-message/charset"
 	msgmail "github.com/emersion/go-message/mail"
 	"io"
