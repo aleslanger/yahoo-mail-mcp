@@ -2,6 +2,8 @@ module github.com/aleslanger/yahoo-mail-mcp
 
 go 1.25.0
 
+toolchain go1.27.2
+
 require (
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
