@@ -2,6 +2,8 @@ name: CI
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   check:
     strategy:
@@ -10,10 +12,17 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          go-version-file: go.mod
+          persist-credentials: false
+      - id: go
+        run: |
+          version=$(sed -n 's/^toolchain go//p' go.mod)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: ${{ steps.go.outputs.version }}
           cache: true
       - run: gofmt -l cmd internal | tee /tmp/gofmt-output && test ! -s /tmp/gofmt-output
       - run: go vet ./...

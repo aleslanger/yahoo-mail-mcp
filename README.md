@@ -2,7 +2,7 @@
 
 A local [Model Context Protocol](https://modelcontextprotocol.io) server, written in Go, that gives MCP clients such as Claude Code and Codex bounded access to a Yahoo Mail account over IMAP and SMTP. It can read and search mail, organize messages, manage drafts, and send, reply and forward with explicit safeguards.
 
-> **Status: not production ready.** The target is a supervised, single-user server on your own machine, over stdio or loopback HTTP. Write permissions are disabled by default; enable them only while you supervise the client or the rules. Release binaries are unsigned. The tests pass on macOS in CI, but the macOS release binaries have not been run yet.
+> **Status: not production ready.** The target is a supervised, single-user server on your own machine, over stdio or loopback HTTP. Write permissions are disabled by default; enable them only while you supervise the client or the rules. Release binaries are not code-signed; they are built in GitHub Actions with a build provenance attestation. The tests pass on macOS in CI, but the macOS release binaries have not been run yet.
 
 ## Features
 
@@ -19,7 +19,7 @@ A local [Model Context Protocol](https://modelcontextprotocol.io) server, writte
 
 ## Requirements
 
-- Go 1.25 or later (network access to fetch the pinned modules on first build)
+- Go 1.25 or later. The `toolchain` line in `go.mod` makes Go download and use the pinned, patched release (currently 1.27.2), so network access is needed on the first build.
 - A Yahoo account with an [app password](https://help.yahoo.com/kb/SLN15241.html)
 - Linux or macOS. Windows is not supported: the server protects credentials, the journal and the index with POSIX file permissions, which Windows does not provide.
 
@@ -30,7 +30,7 @@ make build          # builds ./yahoo-mcp
 make config-init    # creates config.json (mode 0600) from examples/config.json
 ```
 
-To install only the binary, run `go install github.com/aleslanger/yahoo-mail-mcp/cmd/yahoo-mcp@latest`, or download it from [Releases](https://github.com/aleslanger/yahoo-mail-mcp/releases) and check it with `sha256sum -c SHA256SUMS`.
+To install only the binary, run `go install github.com/aleslanger/yahoo-mail-mcp/cmd/yahoo-mcp@latest`, or download it from [Releases](https://github.com/aleslanger/yahoo-mail-mcp/releases) and check it with `sha256sum -c SHA256SUMS`. To confirm that a binary was built by this repository's release workflow, run `gh attestation verify yahoo-mcp-linux-amd64 --repo aleslanger/yahoo-mail-mcp`.
 
 Edit `config.json` and replace `your-address@example.com` with your Yahoo address. Keep `allow_organize` and `allow_send` set to `false` for the first test. The IMAP and SMTP hosts default to [Yahoo's settings](https://help.yahoo.com/kb/new-mail-for-desktop/imap-smtp-settings-article-sln4075.html).
 
@@ -202,7 +202,16 @@ make dist    # Linux and macOS binaries and SHA256SUMS in dist/
 make help    # all targets
 ```
 
-Tests use local TLS IMAP and SMTP fixtures and need no network access or Yahoo account.
+Tests use local TLS IMAP and SMTP fixtures and need no network access or Yahoo account. CI runs the tests on Linux and macOS and `govulncheck` on every push and weekly.
+
+To release, set `Version` in `internal/version/version.go`, commit, then push an annotated tag whose message is the release notes:
+
+```sh
+git tag -a v0.3.0 -F release-notes.md
+git push origin v0.3.0
+```
+
+The release workflow checks that the tag matches the binary version, runs `make check` and `make dist`, scans the binaries with `govulncheck`, attests their provenance and publishes the GitHub release. Versions below 1.0 are marked as pre-releases.
 
 ## Troubleshooting
 

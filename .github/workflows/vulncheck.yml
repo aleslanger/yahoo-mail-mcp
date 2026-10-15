@@ -1,0 +1,26 @@
+name: Vulnerability check
+on:
+  push:
+  pull_request:
+  schedule:
+    # Weekly, so newly published advisories are caught without a code change.
+    - cron: "17 6 * * 1"
+permissions:
+  contents: read
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: go
+        run: |
+          version=$(sed -n 's/^toolchain go//p' go.mod)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: true
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
