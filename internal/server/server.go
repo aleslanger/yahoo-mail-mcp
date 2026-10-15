@@ -331,7 +331,7 @@ func New(cfg config.Config) *mcp.Server {
 }
 
 func NewWithLogger(cfg config.Config, log *slog.Logger) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "yahoo-mail-mcp", Version: "0.2.0"}, &mcp.ServerOptions{Logger: log})
+	s := mcp.NewServer(&mcp.Implementation{Name: "yahoo-mail-mcp", Version: "0.2.1"}, &mcp.ServerOptions{Logger: log})
 	s.AddReceivingMiddleware(toolCallLimiter(8, 10*time.Second))
 	if log != nil {
 		var requestID atomic.Uint64
