@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -112,5 +113,54 @@ func TestHTTPThrottlesRepeatedAuthenticationFailures(t *testing.T) {
 	}
 	if code := postInitialize(t, srv, func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+testHTTPToken) }); code != http.StatusOK {
 		t.Fatalf("valid token blocked by failure throttling: status %d", code)
+	}
+}
+
+func TestRunHTTPServesUntilCanceled(t *testing.T) {
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := probe.Addr().String()
+	if err := probe.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	cfg := config.Config{HTTPListen: addr, Accounts: []config.Account{{Alias: "personal", Address: "a@example.com"}}}
+	go func() { done <- RunHTTP(ctx, cfg, slog.New(slog.DiscardHandler), testHTTPToken) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := http.Get("http://" + addr + "/")
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("unauthenticated request: %d", resp.StatusCode)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server did not start: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
+func TestRunHTTPReportsStartupErrors(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	if err := RunHTTP(context.Background(), config.Config{HTTPListen: "127.0.0.1:0"}, log, ""); err == nil {
+		t.Fatal("empty token accepted")
+	}
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	if err := RunHTTP(context.Background(), config.Config{HTTPListen: busy.Addr().String()}, log, testHTTPToken); err == nil {
+		t.Fatal("listening on a busy address succeeded")
 	}
 }

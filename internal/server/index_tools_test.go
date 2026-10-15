@@ -15,7 +15,13 @@ import (
 
 func connectInMemory(t *testing.T, cfg config.Config) *mcp.ClientSession {
 	t.Helper()
-	ctx := context.Background()
+	return connectWithContext(t, context.Background(), cfg)
+}
+
+// connectWithContext serves cfg in memory; tool handlers inherit ctx, which
+// lets tests inject an IMAP dialer.
+func connectWithContext(t *testing.T, ctx context.Context, cfg config.Config) *mcp.ClientSession {
+	t.Helper()
 	st, ct := mcp.NewInMemoryTransports()
 	if _, err := New(cfg).Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)
