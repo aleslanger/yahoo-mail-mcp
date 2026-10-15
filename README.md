@@ -2,7 +2,7 @@
 
 A local [Model Context Protocol](https://modelcontextprotocol.io) server, written in Go, that gives MCP clients such as Claude Code and Codex bounded access to a Yahoo Mail account over IMAP and SMTP. It can read and search mail, organize messages, manage drafts, and send, reply and forward with explicit safeguards.
 
-> **Status: not production ready.** The target is a supervised, single-user server on your own machine, over stdio or loopback HTTP. Write permissions are disabled by default; enable them only while you supervise the client or the rules. Release binaries are not code-signed; they are built in GitHub Actions with a build provenance attestation. The tests pass on macOS in CI, but the macOS release binaries have not been run yet.
+> **Scope:** a single-user server on your own machine, over stdio or loopback HTTP. Write permissions are disabled by default; enable only the ones you need. Release binaries are not code-signed; they are built in GitHub Actions with a build provenance attestation.
 
 ## Features
 
