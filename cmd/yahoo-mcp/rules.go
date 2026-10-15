@@ -16,7 +16,7 @@ const rulesRunTimeout = 10 * time.Minute
 
 // runRules evaluates configured rules; without --apply it only lists candidates.
 // It writes a JSON report and fails when any rule reported an error.
-func runRules(cfg config.Config, args []string, out io.Writer, ops rules.Operations) error {
+func runRules(ctx context.Context, cfg config.Config, args []string, out io.Writer, ops rules.Operations) error {
 	apply := false
 	switch {
 	case len(args) == 0:
@@ -28,7 +28,7 @@ func runRules(cfg config.Config, args []string, out io.Writer, ops rules.Operati
 	if len(cfg.Rules) == 0 {
 		return errors.New("no rules configured")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), rulesRunTimeout)
+	ctx, cancel := context.WithTimeout(ctx, rulesRunTimeout)
 	defer cancel()
 	reports := rules.Run(ctx, cfg, time.Now(), apply, ops)
 	encoder := json.NewEncoder(out)

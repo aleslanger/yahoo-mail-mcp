@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func TestSyncFolderRetriesTransientReadFailures(t *testing.T) {
 	}
 	var waits []time.Duration
 	sleep := func(d time.Duration) { waits = append(waits, d) }
-	if err := syncFolder(store, config.Account{Alias: "personal"}, "INBOX", fetch, sleep); err != nil {
+	if err := syncFolder(context.Background(), store, config.Account{Alias: "personal"}, "INBOX", fetch, sleep, io.Discard); err != nil {
 		t.Fatalf("sync after transient failures: %v", err)
 	}
 	if calls != 3 || len(waits) != 2 || waits[1] <= waits[0] {
@@ -46,7 +47,7 @@ func TestSyncFolderGivesUpAfterRetries(t *testing.T) {
 		calls++
 		return mail.FolderDelta{}, mail.NewTemporaryError("IMAP authentication failed")
 	}
-	err = syncFolder(store, config.Account{Alias: "personal"}, "INBOX", fetch, func(time.Duration) {})
+	err = syncFolder(context.Background(), store, config.Account{Alias: "personal"}, "INBOX", fetch, func(time.Duration) {}, io.Discard)
 	if err == nil || calls != len(syncRetryDelays)+1 {
 		t.Fatalf("persistent failure: err=%v calls=%d", err, calls)
 	}
@@ -63,7 +64,7 @@ func TestSyncFolderDoesNotRetryPermanentErrors(t *testing.T) {
 		return mail.FolderDelta{}, errors.New("folder selection failed")
 	}
 	slept := false
-	err = syncFolder(store, config.Account{Alias: "personal"}, "Missing", fetch, func(time.Duration) { slept = true })
+	err = syncFolder(context.Background(), store, config.Account{Alias: "personal"}, "Missing", fetch, func(time.Duration) { slept = true }, io.Discard)
 	if err == nil || calls != 1 || slept {
 		t.Fatalf("permanent error retried: err=%v calls=%d slept=%t", err, calls, slept)
 	}

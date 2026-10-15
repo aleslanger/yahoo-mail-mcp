@@ -30,7 +30,7 @@ func TestRulesRunDefaultsToDryRunAndReportsFailures(t *testing.T) {
 		},
 	}
 	var out bytes.Buffer
-	if err := runRules(cfg, nil, &out, ops); err != nil {
+	if err := runRules(context.Background(), cfg, nil, &out, ops); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
 	var report struct {
@@ -40,11 +40,11 @@ func TestRulesRunDefaultsToDryRunAndReportsFailures(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &report); err != nil || report.Applied || len(report.Rules) != 1 || report.Rules[0].Candidates[0].Subject != "Weekly news" || prepared != 0 {
 		t.Fatalf("dry-run report: %s, %v, prepared=%d", out.String(), err, prepared)
 	}
-	if err := runRules(cfg, []string{"--force"}, &out, ops); err == nil {
+	if err := runRules(context.Background(), cfg, []string{"--force"}, &out, ops); err == nil {
 		t.Fatal("unknown flag accepted")
 	}
 	searchErr = errors.New("folder selection failed")
-	if err := runRules(cfg, nil, &bytes.Buffer{}, ops); err == nil {
+	if err := runRules(context.Background(), cfg, nil, &bytes.Buffer{}, ops); err == nil {
 		t.Fatal("failed rule did not fail the run")
 	}
 }

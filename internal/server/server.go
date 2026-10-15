@@ -12,6 +12,7 @@ import (
 	"github.com/aleslanger/yahoo-mail-mcp/internal/config"
 	"github.com/aleslanger/yahoo-mail-mcp/internal/mail"
 	"github.com/aleslanger/yahoo-mail-mcp/internal/send"
+	"github.com/aleslanger/yahoo-mail-mcp/internal/version"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -331,7 +332,7 @@ func New(cfg config.Config) *mcp.Server {
 }
 
 func NewWithLogger(cfg config.Config, log *slog.Logger) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "yahoo-mail-mcp", Version: "0.2.1"}, &mcp.ServerOptions{Logger: log})
+	s := mcp.NewServer(&mcp.Implementation{Name: "yahoo-mail-mcp", Version: version.Version}, &mcp.ServerOptions{Logger: log})
 	s.AddReceivingMiddleware(toolCallLimiter(8, 10*time.Second))
 	if log != nil {
 		var requestID atomic.Uint64
