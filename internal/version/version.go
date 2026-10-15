@@ -2,4 +2,4 @@
 package version
 
 // Version is checked against the release tag by the release workflow.
-const Version = "0.2.4"
+const Version = "0.2.5"

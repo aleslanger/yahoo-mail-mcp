@@ -25,3 +25,6 @@ require (
 
 // Built with Go 1.25.0; the binaries contain known standard library vulnerabilities.
 retract [v0.1.0, v0.2.1]
+
+// Tag was published by mistake from a commit outside master; use v0.2.4 or later.
+retract v0.2.3
