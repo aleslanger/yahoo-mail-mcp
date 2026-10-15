@@ -207,7 +207,7 @@ Tests use local TLS IMAP and SMTP fixtures and need no network access or Yahoo a
 To release, set `Version` in `internal/version/version.go`, commit, then push an annotated tag whose message is the release notes:
 
 ```sh
-git tag -a v0.3.0 -F release-notes.md
+git tag -a v0.3.0 --cleanup=verbatim -F release-notes.md
 git push origin v0.3.0
 ```
 
