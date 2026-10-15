@@ -22,3 +22,6 @@ require (
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
+
+// Built with Go 1.25.0; the binaries contain known standard library vulnerabilities.
+retract [v0.1.0, v0.2.1]
