@@ -30,6 +30,8 @@ make build          # builds ./yahoo-mcp
 make config-init    # creates config.json (mode 0600) from examples/config.json
 ```
 
+To install only the binary, run `go install github.com/aleslanger/yahoo-mail-mcp/cmd/yahoo-mcp@latest`, or download it from [Releases](https://github.com/aleslanger/yahoo-mail-mcp/releases) and check it with `sha256sum -c SHA256SUMS`.
+
 Edit `config.json` and replace `your-address@example.com` with your Yahoo address. Keep `allow_organize` and `allow_send` set to `false` for the first test. The IMAP and SMTP hosts default to [Yahoo's settings](https://help.yahoo.com/kb/new-mail-for-desktop/imap-smtp-settings-article-sln4075.html).
 
 ```sh
